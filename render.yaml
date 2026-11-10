@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: studyai-api
+    runtime: node
+    plan: free
+    region: singapore
+    buildCommand: npm ci --workspace=@studyai/backend --include-workspace-root=false --include=dev && npm run build --workspace=@studyai/backend
+    startCommand: node backend/dist/server.js
+    preDeployCommand: node backend/dist/db/migrate.js
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: '22'
+      - key: TRUST_PROXY
+        value: '2'
+      - key: JWT_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_URL_UNPOOLED
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-3.8-flash
+      - key: ALLOWED_EMAIL_DOMAINS
+        sync: false
