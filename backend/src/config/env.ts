@@ -19,6 +19,9 @@ const envSchema = z
     DATABASE_URL_UNPOOLED: z.url().optional(),
 
     JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters long'),
+    JWT_PREVIOUS_SECRETS: csv.pipe(
+      z.array(z.string().min(32, 'JWT_PREVIOUS_SECRETS entries must be at least 32 characters')),
+    ),
     JWT_EXPIRES_IN_SECONDS: z.coerce
       .number()
       .int()
@@ -65,7 +68,7 @@ export interface AppConfig {
   port: number;
   databaseUrl: string;
   migrationDatabaseUrl: string;
-  jwt: { secret: string; expiresInSeconds: number };
+  jwt: { secret: string; previousSecrets: string[]; expiresInSeconds: number };
   cors: { origins: string[] };
   cookie: { name: string; secure: boolean; sameSite: 'lax' | 'strict' | 'none' };
   allowedEmailDomains: string[];
@@ -107,7 +110,11 @@ export function buildConfig(env: Env): AppConfig {
     port: env.PORT,
     databaseUrl: env.DATABASE_URL,
     migrationDatabaseUrl: env.DATABASE_URL_UNPOOLED ?? env.DATABASE_URL,
-    jwt: { secret: env.JWT_SECRET, expiresInSeconds: env.JWT_EXPIRES_IN_SECONDS },
+    jwt: {
+      secret: env.JWT_SECRET,
+      previousSecrets: env.JWT_PREVIOUS_SECRETS.filter((secret) => secret !== env.JWT_SECRET),
+      expiresInSeconds: env.JWT_EXPIRES_IN_SECONDS,
+    },
     cors: { origins: env.FRONTEND_URL },
     cookie: {
       name: isProduction ? '__Host-studyai_session' : 'studyai_session',

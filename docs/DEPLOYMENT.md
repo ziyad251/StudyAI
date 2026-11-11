@@ -48,7 +48,9 @@ flowchart LR
    - `FRONTEND_URL` = your Vercel URL (you can set a placeholder now and update it after step 3)
    - `GEMINI_API_KEY` = optional
    - `ALLOWED_EMAIL_DOMAINS` = e.g. `college.edu` (or leave empty)
-   - `JWT_SECRET` is generated automatically.
+   - `JWT_SECRET` is generated automatically. To rotate it without signing everyone out, move the old value into
+     `JWT_PREVIOUS_SECRETS` (comma-separated), set a new `JWT_SECRET`, and remove the old one once
+     `JWT_EXPIRES_IN_SECONDS` has elapsed.
 4. Deploy. Render builds with
    `npm ci --workspace=@studyai/backend … && npm run build --workspace=@studyai/backend` and starts
    `node backend/dist/server.js`, listening on Render's `PORT` (bound to `0.0.0.0`).

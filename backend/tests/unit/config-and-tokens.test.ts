@@ -34,6 +34,17 @@ describe('environment validation', () => {
     );
   });
 
+  it('parses previous JWT secrets for rotation and drops the active one', () => {
+    const config = loadConfig({
+      ...TEST_ENV,
+      JWT_PREVIOUS_SECRETS: `${'a'.repeat(32)}, ${TEST_ENV.JWT_SECRET}`,
+    } as NodeJS.ProcessEnv);
+    expect(config.jwt.previousSecrets).toEqual(['a'.repeat(32)]);
+    expect(() =>
+      loadConfig({ ...TEST_ENV, JWT_PREVIOUS_SECRETS: 'short' } as NodeJS.ProcessEnv),
+    ).toThrow(/JWT_PREVIOUS_SECRETS/);
+  });
+
   it('rejects the placeholder secret in production', () => {
     expect(() =>
       loadConfig({
@@ -63,6 +74,22 @@ describe('TokenService', () => {
   it('rejects tokens signed with another secret', () => {
     const other = new TokenService('y'.repeat(40), 60);
     expect(tokens.verify(other.sign({ sub: 'u', ver: 0, role: 'ADMIN' }))).toBeNull();
+  });
+
+  it('tags tokens with a key id', () => {
+    const [header] = tokens.sign({ sub: 'u', ver: 0, role: 'STUDENT' }).split('.');
+    expect(JSON.parse(Buffer.from(header!, 'base64url').toString())).toMatchObject({
+      alg: 'HS256',
+      kid: expect.any(String),
+    });
+  });
+
+  it('keeps accepting tokens signed with a previous secret after rotation', () => {
+    const oldSecret = 'o'.repeat(40);
+    const legacy = new TokenService(oldSecret, 60).sign({ sub: 'u', ver: 1, role: 'STUDENT' });
+    const rotated = new TokenService('n'.repeat(40), 60, [oldSecret]);
+    expect(rotated.verify(legacy)).toEqual({ sub: 'u', ver: 1, role: 'STUDENT' });
+    expect(new TokenService('n'.repeat(40), 60).verify(legacy)).toBeNull();
   });
 });
 

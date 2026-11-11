@@ -20,7 +20,11 @@ export function createServices(deps: {
   logger: Logger;
 }) {
   const { db, config, logger } = deps;
-  const tokens = new TokenService(config.jwt.secret, config.jwt.expiresInSeconds);
+  const tokens = new TokenService(
+    config.jwt.secret,
+    config.jwt.expiresInSeconds,
+    config.jwt.previousSecrets,
+  );
   const notifications = new NotificationService(db);
   const ai = new AiService(db, deps.aiProvider, logger);
 
