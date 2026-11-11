@@ -281,6 +281,22 @@ describe('authentication', () => {
         .get('/api/auth/me')
         .set('Authorization', `Bearer ${token}`);
       expect(reuse.status).toBe(401);
+      expect(reuse.body.error.code).toBe('SESSION_REVOKED');
+    });
+
+    it('reports expired sessions with SESSION_EXPIRED and clears the stale cookie', async () => {
+      const student = await registerStudent(ctx);
+      const expired = jwt.sign(
+        { ver: 0, role: 'STUDENT', exp: Math.floor(Date.now() / 1000) - 10 },
+        TEST_ENV.JWT_SECRET,
+        { subject: student.id, issuer: 'studyai-api', audience: 'studyai-web' },
+      );
+      const res = await request(ctx.app)
+        .get('/api/auth/me')
+        .set('Cookie', `studyai_session=${expired}`);
+      expect(res.status).toBe(401);
+      expect(res.body.error.code).toBe('SESSION_EXPIRED');
+      expect(sessionCookie(res)).toMatch(/studyai_session=;/);
     });
 
     it('suspended accounts cannot log in and existing sessions stop working immediately', async () => {

@@ -12,6 +12,9 @@ export interface SessionClaims {
   role: UserRole;
 }
 
+export type VerifyResult =
+  { status: 'valid'; claims: SessionClaims } | { status: 'expired' } | { status: 'invalid' };
+
 interface SigningKey {
   kid: string;
   secret: string;
@@ -57,32 +60,50 @@ export class TokenService {
   }
 
   verify(token: string): SessionClaims | null {
+    const result = this.inspect(token);
+    return result.status === 'valid' ? result.claims : null;
+  }
+
+  /**
+   * Like {@link verify} but tells an expired-yet-authentic token apart from one that is malformed,
+   * forged or signed with an unknown key. Expiry is only reported once the signature checks out.
+   */
+  inspect(token: string): VerifyResult {
     const decoded = jwt.decode(token, { complete: true });
-    if (!decoded) return null;
+    if (!decoded) return { status: 'invalid' };
 
     // Tokens issued before key ids were introduced carry no `kid`; try every known key.
     const kid = decoded.header.kid;
     const candidates = kid ? [this.keys.get(kid)].filter(Boolean) : [...this.keys.values()];
 
     for (const key of candidates as SigningKey[]) {
-      const claims = this.verifyWith(token, key.secret);
-      if (claims) return claims;
+      const result = this.verifyWith(token, key.secret);
+      if (result.status !== 'invalid') return result;
     }
-    return null;
+    return { status: 'invalid' };
   }
 
-  private verifyWith(token: string, secret: string): SessionClaims | null {
+  private verifyWith(token: string, secret: string): VerifyResult {
     try {
       const payload = jwt.verify(token, secret, {
         algorithms: [ALGORITHM],
         issuer: ISSUER,
         audience: AUDIENCE,
       });
-      if (typeof payload === 'string' || typeof payload.sub !== 'string') return null;
-      if (typeof payload.ver !== 'number' || typeof payload.role !== 'string') return null;
-      return { sub: payload.sub, ver: payload.ver, role: payload.role as UserRole };
-    } catch {
-      return null;
+      if (typeof payload === 'string' || typeof payload.sub !== 'string') {
+        return { status: 'invalid' };
+      }
+      if (typeof payload.ver !== 'number' || typeof payload.role !== 'string') {
+        return { status: 'invalid' };
+      }
+      return {
+        status: 'valid',
+        claims: { sub: payload.sub, ver: payload.ver, role: payload.role as UserRole },
+      };
+    } catch (error) {
+      // jsonwebtoken checks the signature before expiry, so this only fires for authentic tokens.
+      if (error instanceof jwt.TokenExpiredError) return { status: 'expired' };
+      return { status: 'invalid' };
     }
   }
 }

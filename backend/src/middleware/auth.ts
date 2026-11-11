@@ -5,6 +5,13 @@ import type { UserRole } from '../db/schema.js';
 import { userRepository } from '../repositories/user.repository.js';
 import { ForbiddenError, UnauthorizedError } from '../utils/errors.js';
 import type { TokenService } from '../utils/jwt.js';
+import { clearSessionCookie } from '../utils/session-cookie.js';
+
+const SESSION_REJECTIONS = {
+  expired: { code: 'SESSION_EXPIRED', message: 'Your session has expired. Please sign in again.' },
+  revoked: { code: 'SESSION_REVOKED', message: 'You have been signed out. Please sign in again.' },
+  invalid: { code: 'UNAUTHORIZED', message: 'Your session is invalid. Please sign in again.' },
+} as const;
 
 function extractToken(req: Request, cookieName: string): string | undefined {
   const cookieToken = (req.cookies as Record<string, string> | undefined)?.[cookieName];
@@ -28,13 +35,15 @@ export function createAuthMiddleware(deps: {
     const token = extractToken(req, deps.config.cookie.name);
     if (!token) return { status: 'missing' as const };
 
-    const claims = deps.tokens.verify(token);
-    if (!claims) return { status: 'invalid' as const };
+    const verified = deps.tokens.inspect(token);
+    if (verified.status !== 'valid') return { status: verified.status };
+    const { claims } = verified;
 
     const user = await userRepository.findAuthById(deps.db, claims.sub);
-    if (!user || !user.isActive || user.tokenVersion !== claims.ver) {
-      return { status: 'invalid' as const };
-    }
+    if (!user) return { status: 'invalid' as const };
+    // Logged out elsewhere, password changed, or account suspended.
+    if (!user.isActive || user.tokenVersion !== claims.ver) return { status: 'revoked' as const };
+
     return {
       status: 'ok' as const,
       user: { id: user.id, role: user.role, fullName: user.fullName },
@@ -42,17 +51,22 @@ export function createAuthMiddleware(deps: {
   }
 
   return {
-    async requireAuth(req: Request, _res: Response, next: NextFunction) {
+    async requireAuth(req: Request, res: Response, next: NextFunction) {
       const result = await resolveUser(req);
       if (result.status === 'missing') throw new UnauthorizedError();
-      if (result.status === 'invalid')
-        throw new UnauthorizedError('Your session is invalid or has expired');
+      if (result.status !== 'ok') {
+        // Drop the dead cookie so the browser stops replaying it on every request.
+        clearSessionCookie(res, deps.config);
+        const { code, message } = SESSION_REJECTIONS[result.status];
+        throw new UnauthorizedError(message, code);
+      }
       req.user = result.user;
       next();
     },
-    async optionalAuth(req: Request, _res: Response, next: NextFunction) {
+    async optionalAuth(req: Request, res: Response, next: NextFunction) {
       const result = await resolveUser(req);
       if (result.status === 'ok') req.user = result.user;
+      else if (result.status !== 'missing') clearSessionCookie(res, deps.config);
       next();
     },
   };

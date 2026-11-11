@@ -13,7 +13,7 @@ Base path: `/api`. JSON in, JSON out.
 | Status | Meaning                                                                    |
 | ------ | -------------------------------------------------------------------------- |
 | 400    | Validation error / malformed JSON / malformed id                           |
-| 401    | Not authenticated, or invalid/expired/revoked session                      |
+| 401    | `UNAUTHORIZED`; `SESSION_EXPIRED` / `SESSION_REVOKED` for a dead session   |
 | 403    | Authenticated but not allowed (role, ownership, CSRF header missing)       |
 | 404    | Not found – also returned for content hidden from you                      |
 | 409    | Conflict (duplicate email, already reported, question locked, has answers) |

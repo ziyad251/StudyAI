@@ -76,6 +76,13 @@ describe('TokenService', () => {
     expect(tokens.verify(other.sign({ sub: 'u', ver: 0, role: 'ADMIN' }))).toBeNull();
   });
 
+  it('reports authentic expired tokens separately from invalid ones', () => {
+    const expired = new TokenService('x'.repeat(40), -10).sign({ sub: 'u', ver: 0, role: 'ADMIN' });
+    expect(tokens.inspect(expired)).toEqual({ status: 'expired' });
+    expect(new TokenService('z'.repeat(40), 60).inspect(expired)).toEqual({ status: 'invalid' });
+    expect(tokens.inspect('not-a-jwt')).toEqual({ status: 'invalid' });
+  });
+
   it('tags tokens with a key id', () => {
     const [header] = tokens.sign({ sub: 'u', ver: 0, role: 'STUDENT' }).split('.');
     expect(JSON.parse(Buffer.from(header!, 'base64url').toString())).toMatchObject({
