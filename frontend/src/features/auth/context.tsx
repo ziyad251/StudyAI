@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, type RegisterInput } from '@/lib/api';
 import { ApiError } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
+import { recordSessionEnd } from '@/lib/session';
 import type { User } from '@/lib/types';
 
 interface AuthContextValue {
@@ -25,7 +26,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         return await api.auth.me();
       } catch (error) {
-        if (error instanceof ApiError && error.status === 401) return null;
+        if (error instanceof ApiError && error.status === 401) {
+          recordSessionEnd(error);
+          return null;
+        }
         throw error;
       }
     },

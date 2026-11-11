@@ -3,6 +3,10 @@ import { AxiosError, AxiosHeaders } from 'axios';
 import { ApiError, apiClient } from '@/lib/api-client';
 import { registerSchema } from '@/features/auth/schemas';
 import { initials, pluralize, timeAgo } from '@/lib/format';
+import { createQueryClient } from '@/lib/query-client';
+import { queryKeys } from '@/lib/query-keys';
+import { consumeSessionEndReason, isSessionError, recordSessionEnd } from '@/lib/session';
+import { makeUser } from './utils';
 
 describe('api client', () => {
   it('sends credentials and the CSRF header on every request', () => {
@@ -93,5 +97,33 @@ describe('formatting helpers', () => {
     expect(pluralize(1, 'answer')).toBe('1 answer');
     expect(pluralize(3, 'answer')).toBe('3 answers');
     expect(initials('Anita  Rao Kumar')).toBe('AR');
+  });
+});
+
+describe('session expiry handling', () => {
+  it('signs the user out locally and remembers why when a query hits a dead session', async () => {
+    const client = createQueryClient();
+    client.setQueryData(queryKeys.me, makeUser());
+
+    await client
+      .fetchQuery({
+        queryKey: ['questions'],
+        queryFn: () =>
+          Promise.reject(new ApiError('Your session has expired', 401, 'SESSION_EXPIRED')),
+      })
+      .catch(() => {});
+
+    expect(client.getQueryData(queryKeys.me)).toBeNull();
+    expect(consumeSessionEndReason()).toBe('expired');
+    expect(consumeSessionEndReason()).toBeNull();
+  });
+
+  it('does not record a reason for ordinary 401s or other errors', () => {
+    expect(isSessionError(new ApiError('Invalid email or password', 401, 'UNAUTHORIZED'))).toBe(
+      false,
+    );
+    expect(isSessionError(new ApiError('Forbidden', 403, 'SESSION_REVOKED'))).toBe(false);
+    recordSessionEnd(new ApiError('Invalid email or password', 401, 'UNAUTHORIZED'));
+    expect(consumeSessionEndReason()).toBeNull();
   });
 });
