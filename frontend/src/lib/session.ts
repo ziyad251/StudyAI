@@ -19,9 +19,17 @@ export function recordSessionEnd(error: unknown) {
   if (isSessionError(error)) pendingReason = REASON_BY_CODE[error.code]!;
 }
 
-/** Returns the reason recorded by {@link recordSessionEnd} and clears it. */
-export function consumeSessionEndReason(): SessionEndReason | null {
-  const reason = pendingReason;
-  pendingReason = null;
-  return reason;
+/** The reason recorded by {@link recordSessionEnd}, if any. Safe to call during render. */
+export function peekSessionEndReason(): SessionEndReason | null {
+  return pendingReason;
 }
+
+export function clearSessionEndReason() {
+  pendingReason = null;
+}
+
+export const SESSION_END_MESSAGES: Record<SessionEndReason, string> = {
+  expired: 'Your session expired. Please sign in again to continue.',
+  revoked:
+    'You were signed out because your password changed or you logged out on another device. Please sign in again.',
+};

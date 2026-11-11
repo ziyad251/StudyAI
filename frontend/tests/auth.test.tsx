@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Route, Routes } from 'react-router';
-import { RequireAuth } from '@/features/auth/guards';
+import { GuestOnly, RequireAuth } from '@/features/auth/guards';
 import { LoginPage } from '@/pages/public/login-page';
 import { RegisterPage } from '@/pages/public/register-page';
 import { api } from '@/lib/api';
@@ -59,6 +59,16 @@ describe('authentication state and route guards', () => {
 });
 
 describe('login form', () => {
+  function GuardedLogin() {
+    return (
+      <Routes>
+        <Route element={<GuestOnly />}>
+          <Route path="/login" element={<LoginPage />} />
+        </Route>
+      </Routes>
+    );
+  }
+
   it('validates required fields before calling the API', async () => {
     unauthenticated();
     const user = userEvent.setup();
@@ -89,6 +99,21 @@ describe('login form', () => {
       email: 'rao@college.edu',
       password: 'whatever',
     });
+  });
+
+  it('explains that the session expired when a stale cookie is rejected', async () => {
+    mocked.auth.me.mockRejectedValue(
+      new ApiError('Your session has expired', 401, 'SESSION_EXPIRED'),
+    );
+    renderApp(<GuardedLogin />, { route: '/login', path: '/*' });
+    expect(await screen.findByText(/your session expired/i)).toBeInTheDocument();
+  });
+
+  it('shows no session notice for a visitor who was never signed in', async () => {
+    unauthenticated();
+    renderApp(<GuardedLogin />, { route: '/login', path: '/*' });
+    await screen.findByRole('button', { name: /sign in/i });
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 
   it('shows the server error for bad credentials', async () => {

@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Eye, EyeOff, Loader2 } from 'lucide-react';
+import { Clock, Eye, EyeOff, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -12,6 +12,7 @@ import { FieldError } from '@/components/common';
 import { homePathFor, useAuth } from '@/features/auth/context';
 import { loginSchema, type LoginValues } from '@/features/auth/schemas';
 import { errorMessage } from '@/lib/api-client';
+import { SESSION_END_MESSAGES, clearSessionEndReason, peekSessionEndReason } from '@/lib/session';
 import { AuthLayout } from './auth-layout';
 
 export function LoginPage() {
@@ -20,6 +21,9 @@ export function LoginPage() {
   const location = useLocation();
   const [serverError, setServerError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
+  // Read during render, cleared after mount, so the notice shows once and survives StrictMode.
+  const [sessionEnd] = useState(peekSessionEndReason);
+  useEffect(clearSessionEndReason, []);
 
   const {
     register,
@@ -55,10 +59,17 @@ export function LoginPage() {
       }
     >
       <form onSubmit={onSubmit} className="space-y-5" noValidate>
-        {serverError && (
+        {serverError ? (
           <Alert variant="destructive">
             <AlertDescription>{serverError}</AlertDescription>
           </Alert>
+        ) : (
+          sessionEnd && (
+            <Alert role="status">
+              <Clock className="size-4" />
+              <AlertDescription>{SESSION_END_MESSAGES[sessionEnd]}</AlertDescription>
+            </Alert>
+          )
         )}
         <div className="space-y-2">
           <Label htmlFor="email">College email</Label>

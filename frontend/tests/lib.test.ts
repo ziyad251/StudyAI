@@ -5,7 +5,12 @@ import { registerSchema } from '@/features/auth/schemas';
 import { initials, pluralize, timeAgo } from '@/lib/format';
 import { createQueryClient } from '@/lib/query-client';
 import { queryKeys } from '@/lib/query-keys';
-import { consumeSessionEndReason, isSessionError, recordSessionEnd } from '@/lib/session';
+import {
+  clearSessionEndReason,
+  isSessionError,
+  peekSessionEndReason,
+  recordSessionEnd,
+} from '@/lib/session';
 import { makeUser } from './utils';
 
 describe('api client', () => {
@@ -114,8 +119,9 @@ describe('session expiry handling', () => {
       .catch(() => {});
 
     expect(client.getQueryData(queryKeys.me)).toBeNull();
-    expect(consumeSessionEndReason()).toBe('expired');
-    expect(consumeSessionEndReason()).toBeNull();
+    expect(peekSessionEndReason()).toBe('expired');
+    clearSessionEndReason();
+    expect(peekSessionEndReason()).toBeNull();
   });
 
   it('does not record a reason for ordinary 401s or other errors', () => {
@@ -124,6 +130,6 @@ describe('session expiry handling', () => {
     );
     expect(isSessionError(new ApiError('Forbidden', 403, 'SESSION_REVOKED'))).toBe(false);
     recordSessionEnd(new ApiError('Invalid email or password', 401, 'UNAUTHORIZED'));
-    expect(consumeSessionEndReason()).toBeNull();
+    expect(peekSessionEndReason()).toBeNull();
   });
 });
