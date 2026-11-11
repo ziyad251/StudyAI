@@ -284,6 +284,33 @@ describe('authentication', () => {
       expect(reuse.body.error.code).toBe('SESSION_REVOKED');
     });
 
+    it('renews cookie sessions that are past half their lifetime, but not bearer tokens', async () => {
+      const student = await registerStudent(ctx);
+      const nearlyExpired = jwt.sign(
+        { ver: 0, role: 'STUDENT', exp: Math.floor(Date.now() / 1000) + 60 },
+        TEST_ENV.JWT_SECRET,
+        { subject: student.id, issuer: 'studyai-api', audience: 'studyai-web' },
+      );
+
+      const viaCookie = await request(ctx.app)
+        .get('/api/auth/me')
+        .set('Cookie', `studyai_session=${nearlyExpired}`);
+      expect(viaCookie.status).toBe(200);
+      const renewed = sessionCookie(viaCookie)!.split(';')[0]!.split('=')[1]!;
+      expect(renewed).not.toBe(nearlyExpired);
+      const { exp } = jwt.decode(renewed) as { exp: number };
+      expect(exp).toBeGreaterThan(Math.floor(Date.now() / 1000) + 3600);
+
+      const viaBearer = await request(ctx.app)
+        .get('/api/auth/me')
+        .set('Authorization', `Bearer ${nearlyExpired}`);
+      expect(viaBearer.status).toBe(200);
+      expect(sessionCookie(viaBearer)).toBeUndefined();
+
+      const fresh = await student.get('/api/auth/me');
+      expect(sessionCookie(fresh)).toBeUndefined();
+    });
+
     it('reports expired sessions with SESSION_EXPIRED and clears the stale cookie', async () => {
       const student = await registerStudent(ctx);
       const expired = jwt.sign(

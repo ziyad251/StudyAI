@@ -5,7 +5,7 @@ import type { UserRole } from '../db/schema.js';
 import { userRepository } from '../repositories/user.repository.js';
 import { ForbiddenError, UnauthorizedError } from '../utils/errors.js';
 import type { TokenService } from '../utils/jwt.js';
-import { clearSessionCookie } from '../utils/session-cookie.js';
+import { clearSessionCookie, setSessionCookie } from '../utils/session-cookie.js';
 
 const SESSION_REJECTIONS = {
   expired: { code: 'SESSION_EXPIRED', message: 'Your session has expired. Please sign in again.' },
@@ -13,11 +13,16 @@ const SESSION_REJECTIONS = {
   invalid: { code: 'UNAUTHORIZED', message: 'Your session is invalid. Please sign in again.' },
 } as const;
 
-function extractToken(req: Request, cookieName: string): string | undefined {
+function extractToken(
+  req: Request,
+  cookieName: string,
+): { token: string; source: 'cookie' | 'bearer' } | undefined {
   const cookieToken = (req.cookies as Record<string, string> | undefined)?.[cookieName];
-  if (cookieToken) return cookieToken;
+  if (cookieToken) return { token: cookieToken, source: 'cookie' };
   const header = req.headers.authorization;
-  if (header?.startsWith('Bearer ')) return header.slice('Bearer '.length).trim();
+  if (header?.startsWith('Bearer ')) {
+    return { token: header.slice('Bearer '.length).trim(), source: 'bearer' };
+  }
   return undefined;
 }
 
@@ -31,11 +36,11 @@ export function createAuthMiddleware(deps: {
   config: AppConfig;
   tokens: TokenService;
 }): AuthMiddleware {
-  async function resolveUser(req: Request) {
-    const token = extractToken(req, deps.config.cookie.name);
-    if (!token) return { status: 'missing' as const };
+  async function resolveUser(req: Request, res: Response) {
+    const extracted = extractToken(req, deps.config.cookie.name);
+    if (!extracted) return { status: 'missing' as const };
 
-    const verified = deps.tokens.inspect(token);
+    const verified = deps.tokens.inspect(extracted.token);
     if (verified.status !== 'valid') return { status: verified.status };
     const { claims } = verified;
 
@@ -43,6 +48,12 @@ export function createAuthMiddleware(deps: {
     if (!user) return { status: 'invalid' as const };
     // Logged out elsewhere, password changed, or account suspended.
     if (!user.isActive || user.tokenVersion !== claims.ver) return { status: 'revoked' as const };
+
+    // Only cookie sessions are renewed: bearer clients manage their own tokens.
+    if (extracted.source === 'cookie' && deps.tokens.shouldRenew(verified.expiresAt)) {
+      const renewed = deps.tokens.sign({ sub: user.id, ver: user.tokenVersion, role: user.role });
+      setSessionCookie(res, deps.config, renewed);
+    }
 
     return {
       status: 'ok' as const,
@@ -52,7 +63,7 @@ export function createAuthMiddleware(deps: {
 
   return {
     async requireAuth(req: Request, res: Response, next: NextFunction) {
-      const result = await resolveUser(req);
+      const result = await resolveUser(req, res);
       if (result.status === 'missing') throw new UnauthorizedError();
       if (result.status !== 'ok') {
         // Drop the dead cookie so the browser stops replaying it on every request.
@@ -64,7 +75,7 @@ export function createAuthMiddleware(deps: {
       next();
     },
     async optionalAuth(req: Request, res: Response, next: NextFunction) {
-      const result = await resolveUser(req);
+      const result = await resolveUser(req, res);
       if (result.status === 'ok') req.user = result.user;
       else if (result.status !== 'missing') clearSessionCookie(res, deps.config);
       next();

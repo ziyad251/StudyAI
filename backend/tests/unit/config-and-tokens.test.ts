@@ -83,6 +83,13 @@ describe('TokenService', () => {
     expect(tokens.inspect('not-a-jwt')).toEqual({ status: 'invalid' });
   });
 
+  it('asks for renewal only once less than half of the lifetime remains', () => {
+    const now = Date.now();
+    const inSeconds = (s: number) => Math.floor(now / 1000) + s;
+    expect(tokens.shouldRenew(inSeconds(50), now)).toBe(false);
+    expect(tokens.shouldRenew(inSeconds(20), now)).toBe(true);
+  });
+
   it('tags tokens with a key id', () => {
     const [header] = tokens.sign({ sub: 'u', ver: 0, role: 'STUDENT' }).split('.');
     expect(JSON.parse(Buffer.from(header!, 'base64url').toString())).toMatchObject({

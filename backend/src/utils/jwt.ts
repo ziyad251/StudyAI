@@ -13,7 +13,9 @@ export interface SessionClaims {
 }
 
 export type VerifyResult =
-  { status: 'valid'; claims: SessionClaims } | { status: 'expired' } | { status: 'invalid' };
+  | { status: 'valid'; claims: SessionClaims; expiresAt: number }
+  | { status: 'expired' }
+  | { status: 'invalid' };
 
 interface SigningKey {
   kid: string;
@@ -59,6 +61,14 @@ export class TokenService {
     });
   }
 
+  /**
+   * Sliding sessions: once less than half of the lifetime remains, an active user should be handed
+   * a fresh token so they are not signed out mid-semester, while idle sessions still expire.
+   */
+  shouldRenew(expiresAt: number, now = Date.now()): boolean {
+    return expiresAt * 1000 - now < (this.expiresInSeconds * 1000) / 2;
+  }
+
   verify(token: string): SessionClaims | null {
     const result = this.inspect(token);
     return result.status === 'valid' ? result.claims : null;
@@ -96,9 +106,11 @@ export class TokenService {
       if (typeof payload.ver !== 'number' || typeof payload.role !== 'string') {
         return { status: 'invalid' };
       }
+      if (typeof payload.exp !== 'number') return { status: 'invalid' };
       return {
         status: 'valid',
         claims: { sub: payload.sub, ver: payload.ver, role: payload.role as UserRole },
+        expiresAt: payload.exp,
       };
     } catch (error) {
       // jsonwebtoken checks the signature before expiry, so this only fires for authentic tokens.
